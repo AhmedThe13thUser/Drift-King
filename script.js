@@ -1,28 +1,96 @@
-const airDensity = 1.225; //kg/m^3
-const rollingResistanceCoefficient = 0.015; // typical value for car tires
-const g = 9.81; // m/s^2
+const engineAudio = {
+  ctx: null,
+  node: null,
+  masterGain: null,
+  ready: false,
+};
+
+const defaultEngineSound = {
+  intakeWaveguideLength: 100,
+  exhaustWaveguideLength: 120,
+  extractorWaveguideLength: 80,
+  intakeOpenReflectionFactor: 0.01,
+  intakeClosedReflectionFactor: 0.95,
+  exhaustOpenReflectionFactor: 0.01,
+  exhaustClosedReflectionFactor: 0.95,
+  ignitionTime: 0.016,
+  straightPipeWaveguideLength: 128,
+  straightPipeReflectionFactor: 0.01,
+  mufflerElementsLength: [10, 15, 20, 25],
+  action: 0.1,
+  outletWaveguideLength: 5,
+  outletReflectionFactor: 0.01,
+};
+
+function engineSound(overrides) {
+  return { ...defaultEngineSound, ...overrides };
+}
+
+async function setupEngineAudioNode(carKey) {
+  if (!engineAudio.ctx) return;
+
+  const spec = CarTypes[carKey].engineSound;
+  if (engineAudio.node) engineAudio.node.disconnect();
+
+  engineAudio.node = new AudioWorkletNode(
+    engineAudio.ctx,
+    "engine-sound-processor",
+    {
+      numberOfInputs: 0,
+      numberOfOutputs: 3,
+      processorOptions: spec,
+    },
+  );
+  engineAudio.node.connect(engineAudio.masterGain);
+}
+
+async function initEngineAudio() {
+  if (engineAudio.ready) return;
+
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return;
+
+  try {
+    engineAudio.ctx = new AudioCtor();
+    await engineAudio.ctx.audioWorklet.addModule(
+      "./engine-sound-generator/src/engine_sound_generator/engine_sound_generator_worklet.js",
+    );
+
+    engineAudio.masterGain = engineAudio.ctx.createGain();
+    engineAudio.masterGain.gain.value = 0.2;
+    engineAudio.masterGain.connect(engineAudio.ctx.destination);
+
+    await setupEngineAudioNode(curCarKey);
+    engineAudio.ready = true;
+    await engineAudio.ctx.resume();
+  } catch (error) {
+    console.error("Engine audio failed to initialize:", error);
+  }
+}
+
+// browsers block audio until a user gesture, so we wait for the first
+// keypress or click before spinning up the AudioContext
+document.addEventListener("keydown", initEngineAudio, { once: true });
+document.addEventListener("pointerdown", initEngineAudio, { once: true });
+
+const airDensity = 1.225;
+const rollingResistanceCoefficient = 0.015;
+const g = 9.81;
 const detailsText = document.getElementById("details");
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// The car's speed (curCar.speed) is real m/s and drives all the physics
-// and the km/h readout untouched. This is purely a "meters to pixels"
-// scale for how far the sprite travels on screen per second — bump it
-// up if the car still looks too slow crossing the canvas, even though
-// its actual speed/physics haven't changed.
 const pixelsPerMeter = 10;
 
 const carState = {
   x: 200,
   y: 350,
-  rotation: 0.25, // heading the car's NOSE points — driven by steering input
-  velocityAngle: 0.25, // direction the car is ACTUALLY moving — lags behind
-  // heading when tire grip can't keep up (this gap is the "slip")
+  rotation: 0.25,
+  velocityAngle: 0.25,
   width: 70,
   height: 35,
 };
 
-// Shortest signed angle from b to a, wrapped to (-PI, PI]
 function angleDiff(a, b) {
   let d = (a - b) % (2 * Math.PI);
   if (d > Math.PI) d -= 2 * Math.PI;
@@ -63,7 +131,6 @@ function draw() {
   ctx.translate(carState.x, carState.y);
   ctx.rotate(carState.rotation);
 
-  // car body
   ctx.fillStyle = "#d11a1a";
   ctx.fillRect(
     -carState.width / 2,
@@ -72,7 +139,6 @@ function draw() {
     carState.height,
   );
 
-  // roof / cabin
   ctx.fillStyle = "#ad1414";
   ctx.fillRect(
     carState.width * 0.35,
@@ -81,7 +147,6 @@ function draw() {
     carState.height * 1,
   );
 
-  // wheels
   ctx.fillStyle = "#111";
   const wheelOffsetX = carState.width * 0.35;
   const wheelOffsetY = carState.height * 0.5;
@@ -122,7 +187,13 @@ const CarTypes = {
     gears: [0, 3.13, 1.88, 1.33, 1.0, 0.814],
     torque: 135,
     breakPower: 1.2,
-    gripFactor: 0.85, // narrower tires, less grip = more slip
+    gripFactor: 0.85,
+    engineSound: engineSound({
+      cylinders: 4,
+      exhaustWaveguideLength: 90,
+      straightPipeWaveguideLength: 100,
+      mufflerElementsLength: [8, 12, 16, 20],
+    }),
   },
   BMW_M3_E46: {
     weight: 1550,
@@ -135,7 +206,13 @@ const CarTypes = {
     gears: [0, 4.23, 2.53, 1.67, 1.23, 1.0, 0.83],
     torque: 365,
     breakPower: 2.0,
-    gripFactor: 1.0, // baseline grip
+    gripFactor: 1.0,
+    engineSound: engineSound({
+      cylinders: 6,
+      exhaustWaveguideLength: 110,
+      straightPipeWaveguideLength: 120,
+      mufflerElementsLength: [10, 14, 18, 22],
+    }),
   },
   Porsche_718_Cayman_GT4_RS: {
     weight: 1415,
@@ -148,7 +225,14 @@ const CarTypes = {
     gears: [0, 3.91, 2.29, 1.65, 1.3, 1.08, 0.88, 0.71],
     torque: 450,
     breakPower: 2.4,
-    gripFactor: 1.8, // sticky track tires = more grip, less slip
+    gripFactor: 1.8,
+    engineSound: engineSound({
+      cylinders: 6,
+      exhaustWaveguideLength: 105,
+      straightPipeWaveguideLength: 118,
+      mufflerElementsLength: [9, 13, 17, 21],
+      ignitionTime: 0.014,
+    }),
   },
   koenigsegg_jesko: {
     weight: 1420,
@@ -161,7 +245,14 @@ const CarTypes = {
     gears: [0, 3.91, 2.29, 1.65, 1.3, 1.08, 0.88, 0.71],
     torque: 1100,
     breakPower: 3,
-    gripFactor: 2.1, // wide tires, but huge power to fight
+    gripFactor: 2.1,
+    engineSound: engineSound({
+      cylinders: 8,
+      exhaustWaveguideLength: 140,
+      straightPipeWaveguideLength: 150,
+      mufflerElementsLength: [12, 18, 24, 30],
+      intakeClosedReflectionFactor: 0.9,
+    }),
   },
   Toyota_Supra_A90: {
     weight: 1570,
@@ -175,6 +266,13 @@ const CarTypes = {
     torque: 500,
     breakPower: 2.1,
     gripFactor: 1.15,
+    engineSound: engineSound({
+      cylinders: 6,
+      exhaustWaveguideLength: 115,
+      straightPipeWaveguideLength: 125,
+      mufflerElementsLength: [10, 15, 20, 25],
+      intakeClosedReflectionFactor: 0.9,
+    }),
   },
   Nissan_GTR_R35: {
     weight: 1752,
@@ -187,7 +285,14 @@ const CarTypes = {
     gears: [0, 4.056, 2.423, 1.474, 1.0, 0.837, 0.71],
     torque: 633,
     breakPower: 2.3,
-    gripFactor: 1.4, // AWD, huge grip
+    gripFactor: 1.4,
+    engineSound: engineSound({
+      cylinders: 6,
+      exhaustWaveguideLength: 108,
+      straightPipeWaveguideLength: 116,
+      mufflerElementsLength: [10, 14, 19, 24],
+      intakeClosedReflectionFactor: 0.88,
+    }),
   },
   Honda_Civic_TypeR_FL5: {
     weight: 1429,
@@ -201,6 +306,13 @@ const CarTypes = {
     torque: 420,
     breakPower: 1.9,
     gripFactor: 1.1,
+    engineSound: engineSound({
+      cylinders: 4,
+      exhaustWaveguideLength: 88,
+      straightPipeWaveguideLength: 96,
+      mufflerElementsLength: [7, 11, 15, 19],
+      intakeClosedReflectionFactor: 0.9,
+    }),
   },
   Ford_Mustang_GT_S550: {
     weight: 1740,
@@ -213,7 +325,13 @@ const CarTypes = {
     gears: [0, 3.66, 2.43, 1.69, 1.32, 1.0, 0.65],
     torque: 569,
     breakPower: 2.0,
-    gripFactor: 0.95, // RWD muscle car, less planted than the others
+    gripFactor: 0.95,
+    engineSound: engineSound({
+      cylinders: 8,
+      exhaustWaveguideLength: 145,
+      straightPipeWaveguideLength: 155,
+      mufflerElementsLength: [13, 19, 25, 31],
+    }),
   },
   Subaru_WRX_STI: {
     weight: 1568,
@@ -226,7 +344,14 @@ const CarTypes = {
     gears: [0, 3.636, 2.375, 1.761, 1.346, 1.0, 0.767],
     torque: 393,
     breakPower: 1.8,
-    gripFactor: 1.25, // AWD rally-bred grip
+    gripFactor: 1.25,
+    engineSound: engineSound({
+      cylinders: 4,
+      exhaustWaveguideLength: 95,
+      straightPipeWaveguideLength: 105,
+      mufflerElementsLength: [8, 13, 18, 23],
+      ignitionTime: 0.018,
+    }),
   },
 };
 
@@ -234,27 +359,12 @@ const idleRPM = 900;
 const revLimiterPercentage = 0.98;
 const throttleDeadSpace = 0.03;
 
-// Steering authority drops off as speed increases, like a real car —
-// you can spin the wheel lock-to-lock in a parking lot, but at speed
-// even a small input has to be gentler or you lose the back end.
-const baseSteerRate = 2.2; // rad/sec of steering input at low speed
-const steerSpeedScale = 20; // m/s (~72km/h) — speed at which authority starts dropping
-// how much extra steering authority the handbrake gives you, since a
-// real handbrake turn unloads the rear tires and lets the nose (and
-// tail) swing much more freely than normal grip-limited steering does
+const baseSteerRate = 2.2;
+const steerSpeedScale = 20;
 const handbrakeSteerBoost = 2.2;
 
-// Tire grip: how fast the car's actual direction of travel can be
-// dragged toward the direction it's pointed. At low speed/gentle
-// steering the tires keep up almost instantly. At high speed the grip
-// can't redirect that much momentum as quickly, so the car's path lags
-// behind its nose — that gap between "rotation" (heading) and
-// "velocityAngle" (actual travel direction) IS the tire slip.
-// These two are GLOBAL baselines (tuned down so slip is subtler
-// overall); each car's own "gripFactor" (set in CarTypes / the Car
-// constructor) then scales grip up or down per-car from there.
-const baseGripRate = 12; // 1/sec, how fast tires correct slip at low speed
-const gripSpeedScale = 40; // m/s — grip drops off past this speed
+const baseGripRate = 12;
+const gripSpeedScale = 40;
 
 class Car {
   pressThrottle() {
@@ -277,12 +387,12 @@ class Car {
 
   handbreakOn() {
     this.brakingResistance = this.breakPower / 2;
-    this.gripFactor = this.gripFactor * 0.1; // reduce grip when handbrake is on
+    this.gripFactor = this.gripFactor * 0.1;
   }
 
   handbreakOff() {
     this.brakingResistance = 0;
-    this.gripFactor = this.gripFactor / 0.1; // restore grip when handbrake is off
+    this.gripFactor = this.gripFactor / 0.1;
   }
 
   gearDown() {
@@ -338,9 +448,6 @@ class Car {
     this.brakingResistance = 0;
   }
 
-  // Current grip rate (1/sec) at this car's current speed — combines
-  // the global baseline/falloff with this car's own gripFactor. Higher
-  // = tires correct the heading/travel-direction gap faster = less slip.
   currentGripRate() {
     return (
       (baseGripRate * this.gripFactor) /
@@ -359,7 +466,7 @@ class Car {
     finalDriveRatio,
     torque,
     breakPower,
-    gripFactor, // tunable per-car: >1 = more grip/less slip, <1 = slipperier
+    gripFactor,
   ) {
     this.weight = weight;
     this.power = power;
@@ -404,7 +511,8 @@ function createCar(typeKey) {
   );
 }
 
-let curCar = createCar("Porsche_718_Cayman_GT4_RS");
+let curCarKey = "Porsche_718_Cayman_GT4_RS";
+let curCar = createCar(curCarKey);
 
 const carSelect = document.getElementById("carSelect");
 Object.keys(CarTypes).forEach((key) => {
@@ -413,13 +521,12 @@ Object.keys(CarTypes).forEach((key) => {
   option.textContent = key.replace(/_/g, " ");
   carSelect.appendChild(option);
 });
-carSelect.value = "Porsche_718_Cayman_GT4_RS";
+carSelect.value = curCarKey;
 
 carSelect.addEventListener("change", (event) => {
-  // swap in a fresh Car instance for the picked type — resets speed,
-  // throttle, rpm, gear, etc. On-screen position/heading (carState)
-  // is untouched so the sprite doesn't jump around on selection.
-  curCar = createCar(event.target.value);
+  curCarKey = event.target.value;
+  curCar = createCar(curCarKey);
+  if (engineAudio.ready) setupEngineAudioNode(curCarKey);
 });
 
 const keysHeld = new Set();
@@ -452,9 +559,6 @@ const loop = () => {
     } else {
       curCar.throttleTarget = Math.max(curCar.throttleTarget - 0.01, 0);
     }
-    // don't clear the handbrake's braking force every frame just
-    // because "s" isn't held — only stop braking if the handbrake
-    // (spacebar) isn't held either
     if (!keysHeld.has(" ")) {
       curCar.stopBraking();
     }
@@ -464,6 +568,7 @@ const loop = () => {
 
   let rpmTarget;
   if (curCar.gear === 0) {
+    // in neutral there's no wheel to lock rpm to, so it just tracks throttle
     rpmTarget = idleRPM + curCar.throttle * (curCar.redlineRPM - idleRPM);
     curCar.rpm += (rpmTarget - curCar.rpm) * 0.1;
   } else {
@@ -482,10 +587,6 @@ const loop = () => {
   if (!Number.isFinite(curCar.speed)) curCar.speed = 0;
   if (!Number.isFinite(curCar.acceleration)) curCar.acceleration = 0;
 
-  // --- steering: speed-dependent authority, boosted by the handbrake ---
-  // more rad/sec of turning at low speed, tapering off at high speed;
-  // holding the handbrake unloads the rear tires so a given amount of
-  // steering input swings the nose/tail much more freely than normal
   if (curCar.speed > 0.05) {
     const handbrakeBoost = keysHeld.has(" ") ? handbrakeSteerBoost : 1;
     const effectiveSteerRate =
@@ -494,8 +595,6 @@ const loop = () => {
     if (keysHeld.has("d")) carState.rotation += effectiveSteerRate * (1 / 30);
   }
 
-  // --- tire slip: the car's actual travel direction lags behind its
-  // heading, scaled by this car's own gripFactor (see currentGripRate) ---
   const slip = angleDiff(carState.rotation, carState.velocityAngle);
   const gripRate = curCar.currentGripRate();
   carState.velocityAngle += slip * Math.min(1, gripRate * (1 / 30));
@@ -510,15 +609,15 @@ const loop = () => {
   Tire slip: ${slipDeg.toFixed(1)} deg
   Handbrake: ${curCar.brakingResistance > 0 ? "ON" : "OFF"}`;
 
+  if (engineAudio.node) {
+    engineAudio.node.parameters.get("throttle").value = curCar.throttle;
+    engineAudio.node.parameters.get("rpm").value = curCar.rpm;
+  }
+
   draw();
 };
 
 const updateCar = () => {
-  // moves along velocityAngle (where the tires actually have grip),
-  // not carState.rotation (where the nose is pointed) — that gap is
-  // what makes the car slide instead of instantly snapping direction.
-  // pixelsPerMeter scales real-world speed up to a faster-looking
-  // on-screen crawl rate without touching the actual car physics.
   carState.x +=
     curCar.speed * pixelsPerMeter * Math.cos(carState.velocityAngle) * (1 / 30);
   carState.y +=
@@ -536,10 +635,7 @@ function animate(currentTime) {
   requestAnimationFrame(animate);
 
   const deltaTime = currentTime - lastFrameTime;
-
-  if (deltaTime < frameInterval) {
-    return;
-  }
+  if (deltaTime < frameInterval) return;
 
   lastFrameTime = currentTime - (deltaTime % frameInterval);
   loop();

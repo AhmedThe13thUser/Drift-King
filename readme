@@ -1,0 +1,49 @@
+# Car Physics Sim
+
+A browser-based 2D car driving sim with real gearbox/RPM physics, tire slip, handbrake drifting, and per-car synthesized engine sound — pick from real cars and drive with WASD.
+
+## Live Demo
+
+[https://ahmedthe13thuser.github.io/Drift-King/]
+
+## Screenshot
+
+![A preview of my drifting game](Screenshot.png)
+
+## Features
+
+- Gearbox-driven RPM, rev limiter, and drivetrain physics
+- Speed-dependent steering and tire slip, boosted by the handbrake for drifting
+- 9 selectable cars, each with its own weight, power, gearing, and grip
+- Real-time synthesized engine audio per car — cylinder count, intake/exhaust waveguide length, and muffler config all vary by engine
+
+## Running Locally
+
+This is a static site (HTML/CSS/JS, no build step, no dependencies) — any local web server works.
+
+1. Clone the repo:
+   ```bash
+   git clone [https://github.com/ahmedthe13thuser/Drift-King.git]
+   cd Drift-King
+   ```
+2. Serve the folder. Pick one:
+   - **VS Code**: install the "Live Server" extension, right-click `index.html` → "Open with Live Server"
+   - **Python 3**: `python3 -m http.server 8000`, then open `http://localhost:8000`
+   - **Node**: `npx serve`, then open the printed URL
+3. Open the served URL in your browser and drive.
+
+> Opening `index.html` directly via `file://` won't work for the engine sound — AudioWorklet modules need to be served over http(s). Use one of the local server options above.
+
+## Controls
+
+| Key       | Action               |
+| --------- | -------------------- |
+| `W`       | Throttle             |
+| `S`       | Brake                |
+| `A` / `D` | Steer                |
+| `Space`   | Handbrake            |
+| `↑` / `↓` | Shift gear up / down |
+
+## Credits
+
+Engine audio is generated with [engine-sound-generator](https://github.com/Antonio-R1/engine-sound-generator) by [Antonio-R1](https://github.com/Antonio-R1), a physically-modeled car engine sound synthesizer built on the Web Audio API (MIT licensed, included in this repo under `engine-sound-generator/`). See that project's README for the underlying research it's based on.
