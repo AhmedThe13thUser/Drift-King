@@ -8,7 +8,7 @@ A browser-based 2D car driving sim with real gearbox/RPM physics, tire slip, han
 
 ## Screenshot
 
-![A preview of my drifting game](Screenshot.png)
+![A preview of my drifting game](https://i.imgur.com/EEm3ev6.png)
 
 ## Features
 
